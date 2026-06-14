@@ -1,0 +1,9 @@
+MitM Collector CSV/XLSX
+Copyright 2026 ZHENG Robert
+
+This product includes software developed by ZHENG Robert.
+Licensed under the Apache License, Version 2.0.
+
+Dependencies:
+- github.com/jackc/pgx/v5 (MIT License)
+- github.com/xuri/excelize/v2 (BSD 3-Clause License)
