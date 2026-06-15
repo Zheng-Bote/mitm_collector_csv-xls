@@ -21,6 +21,12 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
+var (
+	appName        = "CSV/XLS Collector"
+	appDescription = "Parses and ingests data from CSV and Excel files"
+	version        = "1.0.0"
+)
+
 // Send IPC message
 func sendStatus(socketPath string, runID int, status, message string, progress int) {
 	if socketPath == "" || runID == 0 {
@@ -127,7 +133,8 @@ func main() {
 
 	defer os.Remove(args.File)
 
-	sendStatus(socketPath, runID, "RUNNING", fmt.Sprintf("Started processing file: %s", args.File), 0)
+	sendStatus(socketPath, runID, "RUNNING", fmt.Sprintf("%s (%s) started. Processing file: %s", appName, version, args.File), 0)
+	sendAudit(socketPath, runID, "RUNNING", fmt.Sprintf("%s (%s) started", appName, version))
 
 	dbConfigJSON := os.Getenv("MITM_DB_CONFIG_JSON")
 	var dbCfg struct {
@@ -204,7 +211,7 @@ func main() {
 		if len(sheets) == 0 {
 			fatal("XLSX file has no sheets", nil)
 		}
-		
+
 		records, err = f.GetRows(sheets[0])
 		if err != nil {
 			fatal("Failed to read XLSX rows", err)

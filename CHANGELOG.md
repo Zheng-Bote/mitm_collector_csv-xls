@@ -5,6 +5,11 @@ All notable changes to the `mitm_collector_csv-xls` component will be documented
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.2.0] - 2026-06-15
+
+### Added
+- **Centralized App Info**: Added `appName` and `version` globally. The component now broadcasts its name and version via IPC when starting.
+
 ## [v0.1.0] - 2026-06-14
 
 ### Added
