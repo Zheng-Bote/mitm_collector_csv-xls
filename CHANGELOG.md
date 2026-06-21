@@ -5,6 +5,12 @@ All notable changes to the `mitm_collector_csv-xls` component will be documented
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.3.0] - 2026-06-21
+
+### Added
+- **Stateful Aggregation**: Replaced `raw_ingestion_id` with a deterministic `correlation_id` (UUIDv5). 
+- **Business Keys**: Introduced a `business_key_column` parameter. The collector now dynamically extracts values from this column (or falls back to the first column) to compute stable correlation IDs. This allows CSV/XLSX fragments to be joined with database fragments in the Transformation Layer.
+
 ## [v0.2.0] - 2026-06-15
 
 ### Added

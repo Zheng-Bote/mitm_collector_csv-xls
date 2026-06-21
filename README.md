@@ -9,7 +9,8 @@ Unlike typical scheduled database collectors (e.g. `mitm_collector_pg`), this co
 1. A user with the `UPLOADER` or `ADMIN` role uploads a file via the MitM Admin Frontend.
 2. The Go Scheduler temporarily stores the file in the configured `upload_dir`.
 3. The Scheduler immediately launches this collector using its internal job runner engine.
-4. The collector parses the CSV, encrypts it on a row-by-row basis (generating its own Data Encryption Key), and inserts the fragments into the `raw_ingestion` table.
+4. The collector parses the CSV, encrypts it on a row-by-row basis (generating its own Data Encryption Key).
+5. It extracts a deterministic `correlation_id` based on the specified `business_key_column` and inserts the fragments into the `raw_ingestion` table.
 5. IPC logs are actively streamed back to the Scheduler.
 6. The temporary file is securely removed (`os.Remove`) from the filesystem upon completion or failure.
 
@@ -20,9 +21,12 @@ The Collector receives its dynamic arguments via the first command-line argument
 ```json
 {
   "file": "/path/to/uploaded/file.csv",
-  "topic": "TARGET_TOPIC_NAME"
+  "topic": "TARGET_TOPIC_NAME",
+  "business_key_column": "Personalnummer"
 }
 ```
+
+* `business_key_column`: (Optional) The CSV header column to use for generating a deterministic `correlation_id` (UUIDv5). If omitted, the first column of the CSV is used as a fallback. This allows linking manual uploads with database ingestion events.
 
 ## Required Environment Variables
 

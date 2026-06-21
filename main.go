@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/xuri/excelize/v2"
 )
@@ -120,8 +121,9 @@ func main() {
 
 	argsJSON := os.Args[1]
 	var args struct {
-		File  string `json:"file"`
-		Topic string `json:"topic"`
+		File              string `json:"file"`
+		Topic             string `json:"topic"`
+		BusinessKeyColumn string `json:"business_key_column"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		fatal("Failed to parse args", err)
@@ -257,8 +259,29 @@ func main() {
 			continue
 		}
 
-		_, err = pool.Exec(ctx, "INSERT INTO raw_ingestion (topic, source_system, payload, nonce, dek_id, status) VALUES ($1, 'CSV_UPLOAD', $2, $3, $4, 'pending')",
-			args.Topic, encryptedPayload, nonce, keyID)
+		// Determine Business Key
+		var businessKey string
+		if args.BusinessKeyColumn != "" {
+			if bkVal, ok := recordMap[args.BusinessKeyColumn]; ok && bkVal != "" {
+				businessKey = bkVal
+			} else {
+				businessKey = "UNKNOWN"
+			}
+		} else {
+			// Fallback: Use the first column if available
+			if len(headers) > 0 {
+				businessKey = recordMap[headers[0]]
+			} else {
+				businessKey = "UNKNOWN"
+			}
+		}
+
+		// Generate deterministic Correlation ID
+		namespaceMitM := uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
+		correlationID := uuid.NewSHA1(namespaceMitM, []byte(businessKey))
+
+		_, err = pool.Exec(ctx, "INSERT INTO raw_ingestion (topic, source_system, correlation_id, payload, nonce, dek_id, status) VALUES ($1, 'CSV_UPLOAD', $2, $3, $4, $5, 'pending')",
+			args.Topic, correlationID, encryptedPayload, nonce, keyID)
 		if err != nil {
 			log.Printf("Failed to insert row %d: %v", i, err)
 			continue
