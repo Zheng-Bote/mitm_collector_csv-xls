@@ -136,7 +136,7 @@ func main() {
 	defer os.Remove(args.File)
 
 	sendStatus(socketPath, runID, "RUNNING", fmt.Sprintf("%s (%s) started. Processing file: %s", appName, version, args.File), 0)
-	sendAudit(socketPath, runID, "RUNNING", fmt.Sprintf("%s (%s) started", appName, version))
+	sendAudit(socketPath, runID, "mitm_collector_csv-xls", fmt.Sprintf("%s (%s) started", appName, version))
 
 	dbConfigJSON := os.Getenv("MITM_DB_CONFIG_JSON")
 	var dbCfg struct {
@@ -294,6 +294,7 @@ func main() {
 		}
 	}
 
-	sendAudit(socketPath, runID, "FileCollector", fmt.Sprintf("Successfully ingested %d rows from file %s", inserted, args.File))
+	sendAudit(socketPath, runID, "mitm_collector_csv-xls", fmt.Sprintf("Successfully ingested %d rows from file %s", inserted, args.File))
+	sendAudit(socketPath, runID, "mitm_collector_csv-xls", fmt.Sprintf("%s (%s) finished", appName, version))
 	sendStatus(socketPath, runID, "SUCCESS", fmt.Sprintf("Ingestion complete. Topic: %s", args.Topic), 100)
 }
