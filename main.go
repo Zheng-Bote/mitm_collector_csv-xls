@@ -138,6 +138,7 @@ func main() {
 	sendStatus(socketPath, runID, "RUNNING", fmt.Sprintf("%s (%s) started. Processing file: %s", appName, version, args.File), 0)
 	sendAudit(socketPath, runID, "mitm_collector_csv-xls", fmt.Sprintf("%s (%s) started", appName, version))
 
+	configSource := "Environment Variables"
 	dbConfigJSON := os.Getenv("MITM_DB_CONFIG_JSON")
 	var dbCfg struct {
 		Host     string `json:"host"`
@@ -146,10 +147,37 @@ func main() {
 		Password string `json:"password"`
 		Database string `json:"database"`
 	}
-	if err := json.Unmarshal([]byte(dbConfigJSON), &dbCfg); err != nil {
-		sendStatus(socketPath, runID, "FAILED", "Failed to parse DB config", 0)
-		log.Fatalf("Failed to parse DB config: %v", err)
+
+	if dbConfigJSON != "" {
+		var fullCfg struct {
+			DB struct {
+				Host     string `json:"host"`
+				Port     int    `json:"port"`
+				User     string `json:"user"`
+				Password string `json:"password"`
+				Database string `json:"database"`
+			} `json:"db"`
+		}
+		if err := json.Unmarshal([]byte(dbConfigJSON), &fullCfg); err != nil {
+			fatal("Failed to parse MitM JSON configuration", err)
+		}
+		dbCfg.Host = fullCfg.DB.Host
+		dbCfg.Port = fullCfg.DB.Port
+		dbCfg.User = fullCfg.DB.User
+		dbCfg.Password = fullCfg.DB.Password
+		dbCfg.Database = fullCfg.DB.Database
+		configSource = "JSON Config (MITM_DB_CONFIG_JSON)"
+	} else {
+		dbCfg.Host = os.Getenv("MITM_DB_HOST")
+		if portStr := os.Getenv("MITM_DB_PORT"); portStr != "" {
+			dbCfg.Port, _ = strconv.Atoi(portStr)
+		}
+		dbCfg.User = os.Getenv("MITM_DB_USER")
+		dbCfg.Password = os.Getenv("MITM_DB_PASSWORD")
+		dbCfg.Database = os.Getenv("MITM_DB_NAME")
 	}
+
+	sendAudit(socketPath, runID, "mitm_collector_csv-xls", fmt.Sprintf("Loaded database configuration from %s", configSource))
 
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
 		dbCfg.User, dbCfg.Password, dbCfg.Host, dbCfg.Port, dbCfg.Database)

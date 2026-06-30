@@ -5,6 +5,13 @@ All notable changes to the `mitm_collector_csv-xls` component will be documented
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.5.0] - 2026-06-30
+
+### Changed
+- **Config Restructuring**: Updated database connection setup to accurately parse the JSON configuration (`MITM_DB_CONFIG_JSON`) utilizing the nested `"db"` object format provided by the central scheduler.
+- **Database Connection**: The collector now strictly prioritizes the JSON configuration over direct environment variables (`MITM_DB_HOST`, etc.). Direct environment variables are supported as a fallback.
+- **Audit Logging**: Added IPC audit logging upon initialization to trace and report the source of the database configuration (`JSON Config (MITM_DB_CONFIG_JSON)` vs `Environment Variables`).
+
 ## [v0.4.0] - 2026-06-24
 
 ### Added
