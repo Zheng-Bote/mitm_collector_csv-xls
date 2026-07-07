@@ -179,8 +179,12 @@ func main() {
 
 	sendAudit(socketPath, runID, "mitm_collector_csv-xls", fmt.Sprintf("Loaded database configuration from %s", configSource))
 
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
-		dbCfg.User, dbCfg.Password, dbCfg.Host, dbCfg.Port, dbCfg.Database)
+	sslMode := "disable"
+	if os.Getenv("MITM_DB_SSLMODE") == "true" {
+		sslMode = "require"
+	}
+	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		dbCfg.User, dbCfg.Password, dbCfg.Host, dbCfg.Port, dbCfg.Database, sslMode)
 
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, dsn)

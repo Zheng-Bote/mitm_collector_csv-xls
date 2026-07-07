@@ -39,6 +39,7 @@ The Collector relies on the following environment variables (which are automatic
 | `SCHEDULER_SOCKET_PATH` | UNIX Domain Socket path for IPC communication with the Scheduler. | `/tmp/scheduler.sock` |
 | `MITM_DB_CONFIG_JSON` | (**Preferred**) JSON-encoded credentials containing a nested `"db"` object for the MitM PostgreSQL database. | `'{"db": {"host":"localhost","port":5432,...}}'` |
 | `MITM_DB_HOST` (and others) | (**Fallback**) Direct environment variables for the PostgreSQL connection if JSON is missing. | `192.168.0.31` |
+| `MITM_DB_SSLMODE` | (Optional) If set to `"true"`, enforces SSL connections (`sslmode=require`) to the MitM target database. | `"true"` |
 
 ## Compilation
 
