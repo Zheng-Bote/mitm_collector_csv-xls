@@ -23,9 +23,12 @@ import (
 )
 
 var (
-	appName        = "CSV/XLS Collector"
-	appDescription = "Parses and ingests data from CSV and Excel files"
-	version        = "1.0.0"
+	appName           = "CSV/Excel Collector"
+	appDescription    = "Extracts data from uploaded files"
+	version           = "0.07.00"
+
+	currentTopic      string
+	currentSourceName string
 )
 
 // Send IPC message
@@ -38,6 +41,9 @@ func sendStatus(socketPath string, runID int, status, message string, progress i
 		return
 	}
 	defer conn.Close()
+	if currentTopic != "" && currentSourceName != "" {
+		message = fmt.Sprintf("%s: %s: %s", currentTopic, currentSourceName, message)
+	}
 	event := map[string]interface{}{
 		"run_id":   runID,
 		"status":   status,
@@ -57,6 +63,9 @@ func sendAudit(socketPath string, runID int, component, message string) {
 		return
 	}
 	defer conn.Close()
+	if currentTopic != "" && currentSourceName != "" {
+		message = fmt.Sprintf("%s: %s: %s", currentTopic, currentSourceName, message)
+	}
 	event := map[string]interface{}{
 		"run_id":    runID,
 		"component": component,
@@ -124,6 +133,7 @@ func main() {
 		File              string `json:"file"`
 		Topic             string `json:"topic"`
 		BusinessKeyColumn string `json:"business_key_column"`
+		SourceName        string `json:"source_name"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		fatal("Failed to parse args", err)
@@ -132,6 +142,13 @@ func main() {
 	if args.File == "" || args.Topic == "" {
 		fatal("Missing 'file' or 'topic' in args", nil)
 	}
+
+	if args.SourceName == "" {
+		args.SourceName = "FILE_UPLOAD"
+	}
+
+	currentTopic = args.Topic
+	currentSourceName = args.SourceName
 
 	defer os.Remove(args.File)
 

@@ -5,6 +5,12 @@ All notable changes to the `mitm_collector_csv-xls` component will be documented
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.07.00] - 2026-07-15
+
+### Added
+- **IPC Logging Enhancements**: Added `Topic` and `SourceName` fields to IPC status and audit events to consistently prefix all IPC messages with `<Topic>: <SourceName>: `.
+- **Job Arguments**: Added `source_name` to the CLI JSON arguments to allow dynamic assignment of the source identity (defaults to `"FILE_UPLOAD"`).
+
 ## [v0.6.0] - 2026-07-07
 
 ### Added

@@ -21,11 +21,13 @@ The Collector receives its dynamic arguments via the first command-line argument
 ```json
 {
   "file": "/path/to/uploaded/file.csv",
+  "source_name": "FILE_UPLOAD",
   "topic": "TARGET_TOPIC_NAME",
   "business_key_column": "Personalnummer"
 }
 ```
 
+* `source_name`: (Optional) Identity of the source system, defaults to `"FILE_UPLOAD"` if omitted.
 * `business_key_column`: (Optional) The CSV header column to use for generating a deterministic `correlation_id` (UUIDv5). If omitted, the first column of the CSV is used as a fallback. This allows linking manual uploads with database ingestion events.
 
 ## Required Environment Variables
