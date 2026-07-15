@@ -1,6 +1,6 @@
 module mitm_collector_csv_xls
 
-go 1.25.0
+go 1.26.5
 
 replace go-scheduler => ../../scheduler/mitm_scheduler
 
