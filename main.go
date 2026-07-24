@@ -25,54 +25,78 @@ import (
 var (
 	appName           = "CSV/Excel Collector"
 	appDescription    = "Extracts data from uploaded files"
-	version           = "0.07.00"
+	version           = "0.8.0"
 
-	currentTopic      string
-	currentSourceName string
-)
+	)
 
-// Send IPC message
-func sendStatus(socketPath string, runID int, status, message string, progress int) {
-	if socketPath == "" || runID == 0 {
-		return
-	}
-	conn, err := net.Dial("unix", socketPath)
-	if err != nil {
-		return
-	}
-	defer conn.Close()
-	if currentTopic != "" && currentSourceName != "" {
-		message = fmt.Sprintf("%s: %s: %s", currentTopic, currentSourceName, message)
-	}
-	event := map[string]interface{}{
-		"run_id":   runID,
-		"status":   status,
-		"message":  message,
-		"progress": progress,
-		"type":     "status",
-	}
-	_ = json.NewEncoder(conn).Encode(event)
+// StatusEvent is sent to the scheduler Unix socket
+type StatusEvent struct {
+	RunID     int    `json:"run_id"`
+	Type      string `json:"type"` // "status" (default) or "audit"
+	Component string `json:"component"`
+	Status    string `json:"status"`
+	Message   string `json:"message"`
+	Progress  int    `json:"progress"`
 }
 
-func sendAudit(socketPath string, runID int, component, message string) {
-	if socketPath == "" || runID == 0 {
+// IPCClient is used to send events to the scheduler
+type IPCClient struct {
+	SocketPath string
+	RunID      int
+	Component  string
+	Topic      string
+	SourceName string
+}
+
+func (c *IPCClient) SendEvent(status, message string, progress int) {
+	if c == nil || c.SocketPath == "" {
 		return
 	}
-	conn, err := net.Dial("unix", socketPath)
+	conn, err := net.Dial("unix", c.SocketPath)
 	if err != nil {
+		log.Printf("[IPC ERROR] Failed to connect to scheduler socket: %v", err)
 		return
 	}
 	defer conn.Close()
-	if currentTopic != "" && currentSourceName != "" {
-		message = fmt.Sprintf("%s: %s: %s", currentTopic, currentSourceName, message)
+
+	if c.Topic != "" && c.SourceName != "" {
+		message = fmt.Sprintf("%s: %s: %s", c.Topic, c.SourceName, message)
 	}
-	event := map[string]interface{}{
-		"run_id":    runID,
-		"component": component,
-		"message":   message,
-		"type":      "audit",
+
+	event := StatusEvent{
+		RunID:    c.RunID,
+		Type:     "status",
+		Status:   status,
+		Message:  message,
+		Progress: progress,
 	}
-	_ = json.NewEncoder(conn).Encode(event)
+	data, _ := json.Marshal(event)
+	_, _ = conn.Write(append(data, '\n'))
+}
+
+func (c *IPCClient) SendAudit(message string) {
+	if c == nil || c.SocketPath == "" {
+		return
+	}
+	conn, err := net.Dial("unix", c.SocketPath)
+	if err != nil {
+		log.Printf("[IPC ERROR] Failed to connect to scheduler socket: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	if c.Topic != "" && c.SourceName != "" {
+		message = fmt.Sprintf("%s: %s: %s", c.Topic, c.SourceName, message)
+	}
+
+	event := StatusEvent{
+		RunID:     c.RunID,
+		Type:      "audit",
+		Component: c.Component,
+		Message:   message,
+	}
+	data, _ := json.Marshal(event)
+	_, _ = conn.Write(append(data, '\n'))
 }
 
 // Crypto functions
@@ -110,17 +134,29 @@ func wrapKey(dek, kek []byte) ([]byte, error) {
 }
 
 func main() {
+		var ipc *IPCClient
 	socketPath := os.Getenv("SCHEDULER_SOCKET_PATH")
 	runIDStr := os.Getenv("RUN_ID")
-	runID, _ := strconv.Atoi(runIDStr)
+	if runIDStr != "" && socketPath != "" {
+		runID, err := strconv.Atoi(runIDStr)
+		if err == nil {
+			ipc = &IPCClient{
+				SocketPath: socketPath,
+				RunID:      runID,
+				Component:  "mitm_collector_csv-xls",
+			}
+		}
+	}
 
 	fatal := func(msg string, err error) {
 		fullMsg := fmt.Sprintf("%s: %v", msg, err)
 		if err == nil {
 			fullMsg = msg
 		}
-		sendStatus(socketPath, runID, "FAILED", fullMsg, 0)
-		sendAudit(socketPath, runID, "FileCollector", "ERROR: "+fullMsg)
+		if ipc != nil {
+			ipc.SendEvent("failed", fullMsg, 0)
+			ipc.SendAudit("ERROR: " + fullMsg)
+		}
 		log.Fatalf(fullMsg)
 	}
 
@@ -147,13 +183,15 @@ func main() {
 		args.SourceName = "FILE_UPLOAD"
 	}
 
-	currentTopic = args.Topic
-	currentSourceName = args.SourceName
+	if ipc != nil {
+		ipc.Topic = args.Topic
+		ipc.SourceName = args.SourceName
+	}
 
 	defer os.Remove(args.File)
 
-	sendStatus(socketPath, runID, "RUNNING", fmt.Sprintf("%s (%s) started. Processing file: %s", appName, version, args.File), 0)
-	sendAudit(socketPath, runID, "mitm_collector_csv-xls", fmt.Sprintf("%s (%s) started", appName, version))
+	ipc.SendEvent("processing", fmt.Sprintf("%s (%s) started. Processing file: %s", appName, version, args.File), 0)
+	ipc.SendAudit(fmt.Sprintf("%s (%s) started", appName, version))
 
 	configSource := "Environment Variables"
 	dbConfigJSON := os.Getenv("MITM_DB_CONFIG_JSON")
@@ -194,7 +232,7 @@ func main() {
 		dbCfg.Database = os.Getenv("MITM_DB_NAME")
 	}
 
-	sendAudit(socketPath, runID, "mitm_collector_csv-xls", fmt.Sprintf("Loaded database configuration from %s", configSource))
+	ipc.SendAudit(fmt.Sprintf("Loaded database configuration from %s", configSource))
 
 	sslMode := "disable"
 	if os.Getenv("MITM_DB_SSLMODE") == "true" {
@@ -206,14 +244,14 @@ func main() {
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
-		sendStatus(socketPath, runID, "FAILED", "DB connection failed", 0)
+		ipc.SendEvent("failed", "DB connection failed", 0)
 		log.Fatalf("DB connection failed: %v", err)
 	}
 	defer pool.Close()
 
 	masterKey := os.Getenv("MASTER_KEY")
 	if masterKey == "" {
-		sendStatus(socketPath, runID, "FAILED", "MASTER_KEY not set", 0)
+		ipc.SendEvent("failed", "MASTER_KEY not set", 0)
 		log.Fatal("MASTER_KEY environment variable is required")
 	}
 	var kek []byte
@@ -232,13 +270,13 @@ func main() {
 
 	dek, err := generateRandomKey(32)
 	if err != nil {
-		sendStatus(socketPath, runID, "FAILED", "Failed to generate DEK", 0)
+		ipc.SendEvent("failed", "Failed to generate DEK", 0)
 		log.Fatalf("Failed to generate DEK: %v", err)
 	}
 
 	wrappedDEK, err := wrapKey(dek, kek)
 	if err != nil {
-		sendStatus(socketPath, runID, "FAILED", "Failed to wrap DEK", 0)
+		ipc.SendEvent("failed", "Failed to wrap DEK", 0)
 		log.Fatalf("Failed to wrap DEK: %v", err)
 	}
 
@@ -282,7 +320,7 @@ func main() {
 	}
 
 	if len(records) < 2 {
-		sendStatus(socketPath, runID, "SUCCESS", "File empty or only headers", 100)
+		ipc.SendEvent("finished", "File empty or only headers", 100)
 		return
 	}
 
@@ -290,7 +328,7 @@ func main() {
 	rows := records[1:]
 	totalRows := len(rows)
 
-	sendStatus(socketPath, runID, "RUNNING", fmt.Sprintf("Processing %d rows", totalRows), 10)
+	ipc.SendEvent("processing", fmt.Sprintf("Processing %d rows", totalRows), 10)
 
 	inserted := 0
 	for i, row := range rows {
@@ -314,14 +352,14 @@ func main() {
 			if bkVal, ok := recordMap[args.BusinessKeyColumn]; ok && bkVal != "" {
 				businessKey = bkVal
 			} else {
-				businessKey = "UNKNOWN"
+				businessKey = uuid.New().String()
 			}
 		} else {
 			// Fallback: Use the first column if available
 			if len(headers) > 0 {
 				businessKey = recordMap[headers[0]]
 			} else {
-				businessKey = "UNKNOWN"
+				businessKey = uuid.New().String()
 			}
 		}
 
@@ -339,11 +377,11 @@ func main() {
 
 		if inserted%100 == 0 || inserted == totalRows {
 			progress := 10 + int(float64(inserted)/float64(totalRows)*90)
-			sendStatus(socketPath, runID, "RUNNING", fmt.Sprintf("Inserted %d/%d rows", inserted, totalRows), progress)
+			ipc.SendEvent("processing", fmt.Sprintf("Inserted %d/%d rows", inserted, totalRows), progress)
 		}
 	}
 
-	sendAudit(socketPath, runID, "mitm_collector_csv-xls", fmt.Sprintf("Successfully ingested %d rows from file %s", inserted, args.File))
-	sendAudit(socketPath, runID, "mitm_collector_csv-xls", fmt.Sprintf("%s (%s) finished", appName, version))
-	sendStatus(socketPath, runID, "SUCCESS", fmt.Sprintf("Ingestion complete. Topic: %s", args.Topic), 100)
+	ipc.SendAudit(fmt.Sprintf("Successfully ingested %d rows from file %s", inserted, args.File))
+	ipc.SendAudit(fmt.Sprintf("%s (%s) finished", appName, version))
+	ipc.SendEvent("finished", fmt.Sprintf("Ingestion complete. Topic: %s", args.Topic), 100)
 }
