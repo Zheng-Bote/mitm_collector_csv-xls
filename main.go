@@ -23,11 +23,10 @@ import (
 )
 
 var (
-	appName           = "CSV/Excel Collector"
-	appDescription    = "Extracts data from uploaded files"
-	version           = "0.8.0"
-
-	)
+	appName        = "CSV/Excel Collector"
+	appDescription = "Extracts data from uploaded files"
+	version        = "0.8.0"
+)
 
 // StatusEvent is sent to the scheduler Unix socket
 type StatusEvent struct {
@@ -134,7 +133,9 @@ func wrapKey(dek, kek []byte) ([]byte, error) {
 }
 
 func main() {
-		var ipc *IPCClient
+	version = strings.Split(version, "-")[0]
+
+	var ipc *IPCClient
 	socketPath := os.Getenv("SCHEDULER_SOCKET_PATH")
 	runIDStr := os.Getenv("RUN_ID")
 	if runIDStr != "" && socketPath != "" {
