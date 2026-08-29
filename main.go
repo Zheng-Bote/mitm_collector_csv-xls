@@ -13,13 +13,18 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/xuri/excelize/v2"
+
+	"time"
 )
 
 var (
@@ -158,7 +163,7 @@ func main() {
 			ipc.SendEvent("failed", fullMsg, 0)
 			ipc.SendAudit("ERROR: " + fullMsg)
 		}
-		log.Fatalf(fullMsg)
+		log.Fatalf("%s", fullMsg)
 	}
 
 	if len(os.Args) < 2 {
@@ -242,8 +247,18 @@ func main() {
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
 		dbCfg.User, dbCfg.Password, dbCfg.Host, dbCfg.Port, dbCfg.Database, sslMode)
 
-	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, dsn)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	config_pool, err := pgxpool.ParseConfig(dsn)
+	if err == nil {
+		config_pool.MaxConns = 20
+		config_pool.MaxConnIdleTime = 5 * time.Minute
+		config_pool.MaxConnLifetime = 1 * time.Hour
+	}
+	var pool *pgxpool.Pool
+	if err == nil {
+		pool, err = pgxpool.NewWithConfig(ctx, config_pool)
+	}
 	if err != nil {
 		ipc.SendEvent("failed", "DB connection failed", 0)
 		log.Fatalf("DB connection failed: %v", err)
@@ -255,18 +270,12 @@ func main() {
 		ipc.SendEvent("failed", "MASTER_KEY not set", 0)
 		log.Fatal("MASTER_KEY environment variable is required")
 	}
-	var kek []byte
-	if decoded, err := base64.StdEncoding.DecodeString(masterKey); err == nil {
-		kek = decoded
-	} else {
-		kek = []byte(masterKey)
-	}
-
-	// Adjust KEK to 32 bytes if necessary
-	if len(kek) != 32 {
-		adjusted := make([]byte, 32)
-		copy(adjusted, kek)
-		kek = adjusted
+	kek, err := validateKEK(masterKey)
+	if err != nil {
+		if ipc != nil {
+			ipc.SendEvent("failed", err.Error(), 0)
+		}
+		log.Fatalf("%v", err)
 	}
 
 	dek, err := generateRandomKey(32)
@@ -331,6 +340,58 @@ func main() {
 
 	ipc.SendEvent("processing", fmt.Sprintf("Processing %d rows", totalRows), 10)
 
+	
+	recordsIngested := 0
+	recordsFailed := 0
+
+	batch := &pgx.Batch{}
+	batchSize := 0
+	const maxBatchSize = 1000
+
+	executeBatch := func() {
+		if batchSize == 0 {
+			return
+		}
+		
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			log.Printf("Failed to begin transaction for batch: %v", err)
+			recordsFailed += batchSize
+			batch = &pgx.Batch{}
+			batchSize = 0
+			return
+		}
+		
+		br := tx.SendBatch(ctx, batch)
+		
+		var batchError error
+		for i := 0; i < batchSize; i++ {
+			_, err := br.Exec()
+			if err != nil {
+				batchError = err
+				break
+			}
+		}
+		
+		br.Close()
+		
+		if batchError != nil {
+			tx.Rollback(ctx)
+			log.Printf("Batch exec error: %v", batchError)
+			recordsFailed += batchSize
+		} else {
+			if err := tx.Commit(ctx); err != nil {
+				log.Printf("Failed to commit batch tx: %v", err)
+				recordsFailed += batchSize
+			} else {
+				recordsIngested += batchSize
+			}
+		}
+		
+		batch = &pgx.Batch{}
+		batchSize = 0
+	}
+
 	inserted := 0
 	for i, row := range rows {
 		recordMap := make(map[string]string)
@@ -353,14 +414,16 @@ func main() {
 			if bkVal, ok := recordMap[args.BusinessKeyColumn]; ok && bkVal != "" {
 				businessKey = bkVal
 			} else {
-				businessKey = uuid.New().String()
+				log.Printf("Missing business key for row %d, skipping", i)
+				continue
 			}
 		} else {
 			// Fallback: Use the first column if available
-			if len(headers) > 0 {
+			if len(headers) > 0 && recordMap[headers[0]] != "" {
 				businessKey = recordMap[headers[0]]
 			} else {
-				businessKey = uuid.New().String()
+				log.Printf("Missing business key for row %d, skipping", i)
+				continue
 			}
 		}
 
@@ -368,21 +431,38 @@ func main() {
 		namespaceMitM := uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 		correlationID := uuid.NewSHA1(namespaceMitM, []byte(businessKey))
 
-		_, err = pool.Exec(ctx, "INSERT INTO raw_ingestion (topic, source_system, correlation_id, payload, nonce, dek_id, status) VALUES ($1, 'CSV_UPLOAD', $2, $3, $4, $5, 'pending')",
+		batch.Queue("INSERT INTO raw_ingestion (topic, source_system, correlation_id, payload, nonce, dek_id, status) VALUES ($1, 'CSV_UPLOAD', $2, $3, $4, $5, 'pending')",
 			args.Topic, correlationID, encryptedPayload, nonce, keyID)
-		if err != nil {
-			log.Printf("Failed to insert row %d: %v", i, err)
-			continue
-		}
+		batchSize++
 		inserted++
+
+		if batchSize >= maxBatchSize {
+			executeBatch()
+		}
 
 		if inserted%100 == 0 || inserted == totalRows {
 			progress := 10 + int(float64(inserted)/float64(totalRows)*90)
-			ipc.SendEvent("processing", fmt.Sprintf("Inserted %d/%d rows", inserted, totalRows), progress)
+			ipc.SendEvent("processing", fmt.Sprintf("Processed %d/%d rows", inserted, totalRows), progress)
 		}
 	}
 
-	ipc.SendAudit(fmt.Sprintf("Successfully ingested %d rows from file %s", inserted, args.File))
+	executeBatch()
+
+	ipc.SendAudit(fmt.Sprintf("Successfully ingested %d rows (Failed: %d) from file %s", recordsIngested, recordsFailed, args.File))
 	ipc.SendAudit(fmt.Sprintf("%s (%s) finished", appName, version))
 	ipc.SendEvent("finished", fmt.Sprintf("Ingestion complete. Topic: %s", args.Topic), 100)
+}
+
+func validateKEK(masterKey string) ([]byte, error) {
+	var kek []byte
+	if decoded, err := base64.StdEncoding.DecodeString(masterKey); err == nil {
+		kek = decoded
+	} else {
+		kek = []byte(masterKey)
+	}
+
+	if len(kek) != 32 {
+		return nil, fmt.Errorf("Invalid MASTER_KEY length: expected 32 bytes, got %d", len(kek))
+	}
+	return kek, nil
 }
