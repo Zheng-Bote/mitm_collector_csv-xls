@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -138,6 +139,18 @@ func wrapKey(dek, kek []byte) ([]byte, error) {
 }
 
 func main() {
+	// Fetch credentials via IPC if running under scheduler
+	if dbCfg, masterKey, err := fetchCredentialsFromScheduler(); err == nil {
+		if dbCfg != "" {
+			os.Setenv("MITM_DB_CONFIG_JSON", dbCfg)
+		}
+		if masterKey != "" {
+			os.Setenv("MASTER_KEY", masterKey)
+		}
+	} else if os.Getenv("RUN_ID") != "" && os.Getenv("SCHEDULER_SOCKET_PATH") != "" {
+		log.Printf("[IPC Warning] Failed to get credentials from scheduler: %v", err)
+	}
+
 	version = strings.Split(version, "-")[0]
 
 	var ipc *IPCClient
@@ -465,4 +478,45 @@ func validateKEK(masterKey string) ([]byte, error) {
 		return nil, fmt.Errorf("Invalid MASTER_KEY length: expected 32 bytes, got %d", len(kek))
 	}
 	return kek, nil
+}
+
+func fetchCredentialsFromScheduler() (string, string, error) {
+	runIDStr := os.Getenv("RUN_ID")
+	socketPath := os.Getenv("SCHEDULER_SOCKET_PATH")
+	if runIDStr == "" || socketPath == "" {
+		return "", "", fmt.Errorf("not running under scheduler")
+	}
+	
+	runID, err := strconv.Atoi(runIDStr)
+	if err != nil {
+		return "", "", err
+	}
+	
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		return "", "", err
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
+
+	req := map[string]interface{}{
+		"type":   "get_credentials",
+		"run_id": runID,
+	}
+	data, _ := json.Marshal(req)
+	if _, err := conn.Write(append(data, '\n')); err != nil {
+		return "", "", err
+	}
+
+	scanner := bufio.NewScanner(conn)
+	if scanner.Scan() {
+		var resp struct {
+			MasterKey    string `json:"master_key"`
+			DBConfigJSON string `json:"db_config_json"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &resp); err == nil {
+			return resp.DBConfigJSON, resp.MasterKey, nil
+		}
+	}
+	return "", "", fmt.Errorf("no response or invalid JSON from scheduler")
 }
