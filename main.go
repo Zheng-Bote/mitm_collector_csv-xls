@@ -31,7 +31,7 @@ import (
 var (
 	appName        = "CSV/Excel Collector"
 	appDescription = "Extracts data from uploaded files"
-	version        = "0.11.0"
+	version        = "0.11.1"
 )
 
 // StatusEvent is sent to the scheduler Unix socket

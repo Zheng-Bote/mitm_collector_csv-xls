@@ -5,6 +5,12 @@ All notable changes to the `mitm_collector_csv-xls` component will be documented
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.11.1] - 2026-09-01
+
+### Fixed
+
+- **IPC SSLMode Fix**: Fixed an issue where `SSLMode` was not correctly parsed from the scheduler's JSON configuration and improved the `MITM_DB_SSLMODE` fallback logic to support proper PostgreSQL sslmode strings (e.g., `require`, `verify-full`).
+
 ## [v0.11.0] - 2026-08-31
 
 ### Added
