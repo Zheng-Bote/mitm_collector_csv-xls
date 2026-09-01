@@ -31,7 +31,7 @@ import (
 var (
 	appName        = "CSV/Excel Collector"
 	appDescription = "Extracts data from uploaded files"
-	version        = "0.11.1"
+	version        = "0.11.2"
 )
 
 // StatusEvent is sent to the scheduler Unix socket
@@ -220,7 +220,7 @@ func main() {
 		User     string `json:"user"`
 		Password string `json:"password"`
 		Database string `json:"database"`
-		SSLMode  string `json:"sslmode"`
+		SSLMode  bool   `json:"sslmode"`
 	}
 
 	if dbConfigJSON != "" {
@@ -231,7 +231,7 @@ func main() {
 				User     string `json:"user"`
 				Password string `json:"password"`
 				Database string `json:"database"`
-				SSLMode  string `json:"sslmode"`
+				SSLMode  bool   `json:"sslmode"`
 			} `json:"db"`
 		}
 		if err := json.Unmarshal([]byte(dbConfigJSON), &fullCfg); err != nil {
@@ -242,8 +242,10 @@ func main() {
 		dbCfg.User = fullCfg.DB.User
 		dbCfg.Password = fullCfg.DB.Password
 		dbCfg.Database = fullCfg.DB.Database
-		if fullCfg.DB.SSLMode != "" {
-			os.Setenv("MITM_DB_SSLMODE", fullCfg.DB.SSLMode)
+		if fullCfg.DB.SSLMode {
+			os.Setenv("MITM_DB_SSLMODE", "require")
+		} else {
+			os.Setenv("MITM_DB_SSLMODE", "disable")
 		}
 		configSource = "JSON Config (MITM_DB_CONFIG_JSON)"
 	} else {
