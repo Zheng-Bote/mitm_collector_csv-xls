@@ -31,7 +31,7 @@ import (
 var (
 	appName        = "CSV/Excel Collector"
 	appDescription = "Extracts data from uploaded files"
-	version        = "0.11.2"
+	version        = "0.11.3"
 )
 
 // StatusEvent is sent to the scheduler Unix socket
@@ -261,8 +261,15 @@ func main() {
 	ipc.SendAudit(fmt.Sprintf("Loaded database configuration from %s", configSource))
 
 	sslMode := "disable"
-	if os.Getenv("MITM_DB_SSLMODE") == "true" {
-		sslMode = "require"
+	envSSLMode := os.Getenv("MITM_DB_SSLMODE")
+	if envSSLMode != "" {
+		if envSSLMode == "true" {
+			sslMode = "require"
+		} else if envSSLMode == "false" {
+			sslMode = "disable"
+		} else {
+			sslMode = envSSLMode
+		}
 	}
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
 		dbCfg.User, dbCfg.Password, dbCfg.Host, dbCfg.Port, dbCfg.Database, sslMode)
