@@ -5,6 +5,11 @@ All notable changes to the `mitm_collector_csv-xls` component will be documented
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.11.4] - 2026-10-10
+
+### Fixed
+- **Date Parsing Issue**: Added `cleanDate` function to strip enclosing quotes from CSV/XLS data and properly convert 2-digit years (e.g. `22.02.92`) into 4-digit years (using 2026 as pivot year logic for 1900s vs 2000s) to avoid downstream errors such as `0092`.
+
 ## [v0.11.3] - 2026-09-01
 
 ### Fixed

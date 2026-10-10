@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -31,7 +32,7 @@ import (
 var (
 	appName        = "CSV/Excel Collector"
 	appDescription = "Extracts data from uploaded files"
-	version        = "0.11.3"
+	version        = "0.11.4"
 )
 
 // StatusEvent is sent to the scheduler Unix socket
@@ -136,6 +137,27 @@ func wrapKey(dek, kek []byte) ([]byte, error) {
 		return nil, err
 	}
 	return append(nonce, ciphertext...), nil
+}
+
+func cleanDate(val string) string {
+	val = strings.Trim(val, "\"' ")
+
+	// Match DD.MM.YY or DD.MM.YYYY
+	re := regexp.MustCompile(`^(\d{2})\.(\d{2})\.(\d{2,4})$`)
+	match := re.FindStringSubmatch(val)
+	if match != nil {
+		year := match[3]
+		if len(year) == 2 {
+			y, _ := strconv.Atoi(year)
+			// Pivot year: <= 26 means 20xx, otherwise 19xx
+			if y <= 26 {
+				return fmt.Sprintf("%s.%s.20%02d", match[1], match[2], y)
+			} else {
+				return fmt.Sprintf("%s.%s.19%02d", match[1], match[2], y)
+			}
+		}
+	}
+	return val
 }
 
 func main() {
@@ -424,7 +446,7 @@ func main() {
 		recordMap := make(map[string]string)
 		for j, val := range row {
 			if j < len(headers) {
-				recordMap[headers[j]] = val
+				recordMap[headers[j]] = cleanDate(val)
 			}
 		}
 
