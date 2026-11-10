@@ -5,6 +5,11 @@ All notable changes to the `mitm_collector_csv-xls` component will be documented
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.11.5] - 2026-11-10
+
+### Fixed
+- The remaining fatal errors (DB connection, MASTER_KEY, DEK generation/wrapping) are now sent both as `failed` status event and as audit event (`ERROR: <message>`) to the scheduler, so they appear in `job_audit_logs`.
+
 ## [v0.11.4] - 2026-10-10
 
 ### Fixed

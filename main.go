@@ -32,7 +32,7 @@ import (
 var (
 	appName        = "CSV/Excel Collector"
 	appDescription = "Extracts data from uploaded files"
-	version        = "0.11.4"
+	version        = "0.11.5"
 )
 
 // StatusEvent is sent to the scheduler Unix socket
@@ -309,34 +309,27 @@ func main() {
 		pool, err = pgxpool.NewWithConfig(ctx, config_pool)
 	}
 	if err != nil {
-		ipc.SendEvent("failed", "DB connection failed", 0)
-		log.Fatalf("DB connection failed: %v", err)
+		fatal("DB connection failed", err)
 	}
 	defer pool.Close()
 
 	masterKey := os.Getenv("MASTER_KEY")
 	if masterKey == "" {
-		ipc.SendEvent("failed", "MASTER_KEY not set", 0)
-		log.Fatal("MASTER_KEY environment variable is required")
+		fatal("MASTER_KEY environment variable is required", nil)
 	}
 	kek, err := validateKEK(masterKey)
 	if err != nil {
-		if ipc != nil {
-			ipc.SendEvent("failed", err.Error(), 0)
-		}
-		log.Fatalf("%v", err)
+		fatal(err.Error(), nil)
 	}
 
 	dek, err := generateRandomKey(32)
 	if err != nil {
-		ipc.SendEvent("failed", "Failed to generate DEK", 0)
-		log.Fatalf("Failed to generate DEK: %v", err)
+		fatal("Failed to generate DEK", err)
 	}
 
 	wrappedDEK, err := wrapKey(dek, kek)
 	if err != nil {
-		ipc.SendEvent("failed", "Failed to wrap DEK", 0)
-		log.Fatalf("Failed to wrap DEK: %v", err)
+		fatal("Failed to wrap DEK", err)
 	}
 
 	var keyID string
